@@ -3,7 +3,7 @@ FROM python:3.7-slim-buster
 RUN apt-get update \
     && apt-get -y install libpq-dev gcc
 
-RUN pip install mlflow boto3 pymysql psycopg2
+RUN pip install mlflow boto3 pymysql psycopg2 conda virtualenv
 
 RUN mkdir /mlflow
 RUN chmod -R 777 /mlflow
