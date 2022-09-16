@@ -1,9 +1,9 @@
-FROM python:3.7-slim-buster
+FROM continuumio/miniconda3
 # Install python packages
 RUN apt-get update \
     && apt-get -y install libpq-dev gcc
 
-RUN pip install mlflow boto3 pymysql psycopg2 conda virtualenv
+RUN pip install mlflow boto3 pymysql psycopg2
 
 RUN mkdir /mlflow
 RUN chmod -R 777 /mlflow
