@@ -203,6 +203,8 @@ services:
       - mlflow
     networks:
       - traefik-public
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     deploy:
       mode: replicated
       replicas: 1
