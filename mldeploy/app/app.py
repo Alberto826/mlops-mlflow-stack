@@ -45,7 +45,7 @@ def run_container(name, version):
                 "traefik.http.routers.models-https.rule":f"Host(`models.localhost`) && PathPrefix(`/{name}/{version}`)",
                 "traefik.http.routers.models-https.entrypoints":"https",
                 "traefik.http.routers.models-https.tls.certresolver":"le",
-                "traefik.http.services.models.loadbalancer.server.port":"5000",
+                f"traefik.http.services.{full_name}.loadbalancer.server.port":"5000",
             },
             # command=f'mlflow models serve -m "models:/{name}/{version}"',
             entrypoint=f'mlflow models serve -m "models:/{name}/{version}" --env-manager conda',
