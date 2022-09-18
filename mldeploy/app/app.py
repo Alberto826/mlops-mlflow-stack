@@ -39,10 +39,12 @@ def run_container(name, version):
                 "mlflow_model":"true",
                 "traefik.enable":"true",
                 "traefik.docker.network":"traefik-public",
-                "traefik.http.routers.models-http.rule":f"Host(`models.localhost`) && PathPrefix(`/{name}/{version}`)",
+                "traefik.http.routers.models-http.rule":f"Host(`models.localhost`)",
+                # "traefik.http.routers.models-http.rule":f"Host(`models.localhost`) && PathPrefix(`/{name}/{version}`)",
                 "traefik.http.routers.models-http.entrypoints":"http",
                 "traefik.http.routers.models-http.middlewares":"https-redirect",
-                "traefik.http.routers.models-https.rule":f"Host(`models.localhost`) && PathPrefix(`/{name}/{version}`)",
+                "traefik.http.routers.models-https.rule":f"Host(`models.localhost`)",
+                # "traefik.http.routers.models-https.rule":f"Host(`models.localhost`) && PathPrefix(`/{name}/{version}`)",
                 "traefik.http.routers.models-https.entrypoints":"https",
                 "traefik.http.routers.models-https.tls.certresolver":"le",
                 f"traefik.http.services.{full_name}.loadbalancer.server.port":"5000",
@@ -75,7 +77,8 @@ async def main():
     data = requests.get(f'{os.environ.get("MLFLOW_TRACKING_URI")}/api/2.0/preview/mlflow/registered-models/list', verify=False).json()
     for i, model in enumerate(data.get("registered_models")):
         for v in model.get("latest_versions"):
-            load_model(v.get("name"), v.get("version"), v.get("source"))
+            if v.get("current_stage") in ["Staging","Production"]:
+                load_model(v.get("name"), v.get("version"), v.get("source"))
 
 
 asyncio.run(main())
