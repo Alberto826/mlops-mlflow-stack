@@ -47,7 +47,7 @@ def run_container(name, version):
                 "traefik.http.services.models.loadbalancer.server.port":"5000",
             },
             # command=f'mlflow models serve -m "models:/{name}/{version}"',
-            entrypoint=f'mlflow models serve -m "models:/{name}/{version}" --env-manager virtualenv',
+            entrypoint=f'mlflow models serve -m "models:/{name}/{version}" --env-manager conda',
             # command=f'mlflow models serve --help',
             # entrypoint=f'mlflow models serve --help',
             detach=True,
