@@ -205,6 +205,8 @@ services:
       - traefik-public
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
     deploy:
       mode: replicated
       replicas: 1

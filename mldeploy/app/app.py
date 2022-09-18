@@ -2,6 +2,7 @@ from flask import Flask, render_template
 import requests
 import asyncio
 import docker
+import os
 
 
 app = Flask(__name__)
@@ -71,7 +72,7 @@ def load_model(name, version, source):
         run_container(name, version)
 
 async def main():
-    data = requests.get('https://mlflow.localhost/api/2.0/preview/mlflow/registered-models/list', verify=False).json()
+    data = requests.get(f'{os.environ.get("MLFLOW_TRACKING_URI")}/api/2.0/preview/mlflow/registered-models/list', verify=False).json()
     for i, model in enumerate(data.get("registered_models")):
         for v in model.get("latest_versions"):
             load_model(v.get("name"), v.get("version"), v.get("source"))
@@ -82,5 +83,5 @@ asyncio.run(main())
 @app.route("/")
 def index():
     # data = requests.get('http://mlflow:5000/api/2.0/preview/mlflow/registered-models/list').json()
-    data2 = requests.get('https://mlflow.localhost/api/2.0/preview/mlflow/registered-models/list', verify=False).json()
+    data2 = requests.get(f'{os.environ.get("MLFLOW_TRACKING_URI")}/api/2.0/preview/mlflow/registered-models/list', verify=False).json()
     return render_template('index.html', data=data2)
