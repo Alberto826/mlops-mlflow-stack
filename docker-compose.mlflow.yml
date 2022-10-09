@@ -1,0 +1,98 @@
+version: "3.8"
+
+services:
+
+  minio:
+    image:  minio/minio:RELEASE.2022-08-25T07-17-05Z
+    environment:
+      - MINIO_ROOT_USER=${AWS_ACCESS_KEY_ID}
+      - MINIO_ROOT_PASSWORD=${AWS_SECRET_ACCESS_KEY}
+      - MINIO_BROWSER_REDIRECT_URL=http://${MINIO_DOMAIN?Variable MINIO_DOMAIN not set}
+    command: server /data --console-address ":9001"
+    networks:
+      - minio-network
+      - traefik-public
+    volumes:
+      - minio_volume:/data
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure   
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=traefik-public
+        - traefik.constraint-label=traefik-public
+        - traefik.http.routers.minio-http.service=minio
+        - traefik.http.routers.minio-http.rule=Host(`${MINIO_DOMAIN?Variable MINIO_DOMAIN not set}`)
+        - traefik.http.routers.minio-http.entrypoints=http
+        - traefik.http.routers.minio-http.middlewares=https-redirect
+        - traefik.http.routers.minio-https.service=minio
+        - traefik.http.routers.minio-https.rule=Host(`${MINIO_DOMAIN?Variable MINIO_DOMAIN not set}`)
+        - traefik.http.routers.minio-https.entrypoints=https
+        - traefik.http.routers.minio-https.tls.certresolver=le
+        - traefik.http.services.minio.loadbalancer.server.port=9001
+  
+  mlflow_db:
+    image: postgres
+    restart: always
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: mlflow_db
+      POSTGRES_USER: mlflow_user
+      POSTGRES_PASSWORD: mlflow_password
+    deploy:
+      restart_policy:
+        condition: on-failure
+    networks:
+      - db-network
+
+  mlflow:
+    restart: always
+    build: ./mlflow
+    image: mlflow
+    environment:
+      - BACKEND_STORE_URI=${BACKEND_STORE_URI}
+      - DEFAULT_ARTIFACT_ROOT=${DEFAULT_ARTIFACT_ROOT}
+      - ARTIFACTS_DESTINATION=${ARTIFACTS_DESTINATION}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_REGION}
+      - MLFLOW_S3_ENDPOINT_URL=${MLFLOW_S3_ENDPOINT_URL}
+      - MLFLOW_S3_IGNORE_TLS=${MLFLOW_S3_IGNORE_TLS?Variable MLFLOW_S3_IGNORE_TLS not set}
+    volumes:
+      - mlflow-volume:/mlflow
+    depends_on:
+      - mlflow_db
+    networks:
+      - traefik-public
+      - db-network
+      - minio-network
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=traefik-public
+        - traefik.constraint-label=traefik-public
+        - traefik.http.routers.mlflow-http.rule=Host(`${MLFLOW_DOMAIN?Variable MLFLOW_DOMAIN not set}`)
+        - traefik.http.routers.mlflow-http.entrypoints=http
+        - traefik.http.routers.mlflow-http.middlewares=https-redirect
+        - traefik.http.routers.mlflow-https.rule=Host(`${MLFLOW_DOMAIN?Variable MLFLOW_DOMAIN not set}`)
+        - traefik.http.routers.mlflow-https.entrypoints=https
+        - traefik.http.routers.mlflow-https.tls.certresolver=le
+        - traefik.http.services.mlflow.loadbalancer.server.port=5000
+
+volumes:
+  mlflow-volume:
+  postgres:
+  minio_volume:
+
+networks:
+  traefik-public:
+    external: true
+  db-network:
+  minio-network:

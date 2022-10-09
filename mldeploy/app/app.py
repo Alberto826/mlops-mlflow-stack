@@ -1,90 +1,130 @@
 from flask import Flask, render_template
 import requests
 import asyncio
-import docker
 import os
+from dotenv import load_dotenv
+import mlflow
+load_dotenv()
+
+os.environ['MLFLOW_TRACKING_INSECURE_TLS'] = 'true'
+mlflow.set_tracking_uri(os.environ['MLFLOW_TRACKING_URI'])
+client = mlflow.MlflowClient()
 
 
 app = Flask(__name__)
-docker_client = docker.from_env()
 
-data={'registered_models': [
-    {
-        'name': 'iris_xgb', 
-        'creation_timestamp': 1662026569871, 
-        'last_updated_timestamp': 1662026657342, 
-        'latest_versions': [
-            {
-                'name': 'iris_xgb', 
-                'version': '1', 
-                'creation_timestamp': 1662026570223, 
-                'last_updated_timestamp': 1662026657342, 
-                'current_stage': 'Staging', 
-                'description': '', 
-                'source': 'mlflow-artifacts:/11/cab39c93ea0f49a684d701681688a369/artifacts/iris_xgb', 
-                'run_id': 'cab39c93ea0f49a684d701681688a369', 
-                'status': 'READY', 
-                'run_link': ''
-            }
-        ]}
-    ]}
-
-def run_container(name, version):
+def deploy_stack(name, version, stack_id=None, method='post'):
     full_name=f"{name}-v{version}"
-    container = docker_client.containers.run(
-            image="mlflow_server",
-            name=full_name,
-            network="traefik-public",
-            labels={
-                "mlflow_model":"true",
-                "traefik.enable":"true",
-                "traefik.docker.network":"traefik-public",
-                "traefik.http.routers.models-http.rule":f"Host(`models.localhost`)",
-                # "traefik.http.routers.models-http.rule":f"Host(`models.localhost`) && PathPrefix(`/{name}/{version}`)",
-                "traefik.http.routers.models-http.entrypoints":"http",
-                "traefik.http.routers.models-http.middlewares":"https-redirect",
-                "traefik.http.routers.models-https.rule":f"Host(`models.localhost`)",
-                # "traefik.http.routers.models-https.rule":f"Host(`models.localhost`) && PathPrefix(`/{name}/{version}`)",
-                "traefik.http.routers.models-https.entrypoints":"https",
-                "traefik.http.routers.models-https.tls.certresolver":"le",
-                f"traefik.http.services.{full_name}.loadbalancer.server.port":"5000",
-            },
-            # command=f'mlflow models serve -m "models:/{name}/{version}"',
-            entrypoint=f'mlflow models serve -m "models:/{name}/{version}" --env-manager conda',
-            # command=f'mlflow models serve --help',
-            # entrypoint=f'mlflow models serve --help',
-            detach=True,
-            environment={
-                "MLFLOW_TRACKING_URI":"http://mlflow:5000",
-                "MLFLOW_TRACKING_INSECURE_TLS":"true"
-            },
-        )
+    compose=f'''
+    version: "3.8"
+    services:
+        {full_name}:
+            image: mlflow_server
+            entrypoint: mlflow models serve -m "models:/{name}/{version}" -h 0.0.0.0
+            networks:
+                - traefik-public
+            environment:
+                - MLFLOW_TRACKING_URI=${"{MLFLOW_TRACKING_URI}"}
+                - MLFLOW_TRACKING_INSECURE_TLS=${"{MLFLOW_TRACKING_INSECURE_TLS}"}
+            labels:
+                - traefik.enable=true
+                - traefik.docker.network=traefik-public
+                - traefik.constraint-label=traefik-public
+                - traefik.http.middlewares.{full_name}.stripprefix.prefixes=/{name}/{version}
+                - traefik.http.routers.{full_name}-http.rule=Host(`{os.environ['MLDEPLOY_DOMAIN']}`) && (PathPrefix(`/{name}/{version}`) || PathPrefix(`/v2/models/{name}/versions/{version}`))
+                - traefik.http.routers.{full_name}-http.entrypoints=http
+                - traefik.http.routers.{full_name}-http.middlewares=https-redirect
+                - traefik.http.routers.{full_name}-http.middlewares={full_name}
+                - traefik.http.routers.{full_name}-https.middlewares={full_name}
+                - traefik.http.routers.{full_name}-https.rule=Host(`{os.environ['MLDEPLOY_DOMAIN']}`) && (PathPrefix(`/{name}/{version}`) || PathPrefix(`/v2/models/{name}/versions/{version}`))
+                - traefik.http.routers.{full_name}-https.entrypoints=https
+                - traefik.http.routers.{full_name}-https.tls.certresolver=le
+                - traefik.http.services.{full_name}.loadbalancer.server.port=5000
+    networks:
+        traefik-public:
+            external: true
+    '''
+    headers = {"X-API-Key": os.environ['PORTAINER_ACCESS_TOKEN']}
+    compose_str={
+        "env":[
+            {"name":"MLFLOW_TRACKING_URI","value": os.environ['MLFLOW_TRACKING_URI']},
+            {"name":"MLFLOW_TRACKING_INSECURE_TLS","value":"true"}
+        ],
+        "name": f"{full_name}",
+        "stackFileContent": compose
+    }
+    if method=='post':
+        params={"type":2,"method":"string","endpointId":os.environ['PORTAINER_ENDPOINTID']}
+        res = requests.post(f"{os.environ['PORTAINER_API_URI']}/stacks", headers=headers, params=params, json=compose_str)
+        print('Portainer Stack response POST', res.json())
+    if method=='put':
+        params={"endpointId":os.environ['PORTAINER_ENDPOINTID']}
+        res = requests.put(f"{os.environ['PORTAINER_API_URI']}/stacks/{stack_id}", headers=headers, params=params, json=compose_str)
+        print('Portainer Stack response PUT', res.json())
+    if method=='delete':
+        params={"endpointId":os.environ['PORTAINER_ENDPOINTID']}
+        res = requests.delete(f"{os.environ['PORTAINER_API_URI']}/stacks/{stack_id}", headers=headers, params=params, json=compose_str)
+        print('Portainer Stack response DELETE', res.json())
+    return res.json()
 
-def load_model(name, version, source):
+def deploy_model(name, version, source=None):
     full_name=f"{name}-v{version}"
-    try:
-        cont = docker_client.containers.get(full_name)
-        if cont.status in ["exited","created"]:
-            print(f"Container {full_name} | Status: {cont.status}")
-            print(f"Starting container {full_name}....")
-            cont.remove()
-            run_container(name, version)
-            print(f"Container {full_name} | Status: {cont.status}")
-    except docker.errors.NotFound:
-        run_container(name, version)
+    headers = {"X-API-Key": os.environ['PORTAINER_ACCESS_TOKEN']}
+    response = requests.get(f"{os.environ['PORTAINER_API_URI']}/stacks", headers=headers)
+    if response.status_code==200:
+        stacks = response.json()
+        for stack in stacks:
+            print('Stack Name', stack.get('Name'))
+            if stack.get('Name')==full_name:
+                res=deploy_stack(name, version, stack.get('Id'), method='put')
+                return res
+        res=deploy_stack(name, version)
+    else: res=response.json()
+    print(res)
+    return res
+
+def remove_model(name, version, source=None):
+    full_name=f"{name}-v{version}"
+    headers = {"X-API-Key": os.environ['PORTAINER_ACCESS_TOKEN']}
+    response = requests.get(f"{os.environ['PORTAINER_API_URI']}/stacks", headers=headers)
+    if response.status_code==200:
+        stacks = response.json()
+        for stack in stacks:
+            if stack.get('Name')==full_name:
+                res=deploy_stack(name, version, stack.get('Id'), method='delete')
+                return res
+        res={"message":"model deployment not found"}
+    else: res=response.json()
+    return res
 
 async def main():
-    data = requests.get(f'{os.environ.get("MLFLOW_TRACKING_URI")}/api/2.0/preview/mlflow/registered-models/list', verify=False).json()
-    for i, model in enumerate(data.get("registered_models")):
-        for v in model.get("latest_versions"):
-            if v.get("current_stage") in ["Staging","Production"]:
-                load_model(v.get("name"), v.get("version"), v.get("source"))
-
-
-asyncio.run(main())
+    models = client.search_registered_models()
+    res=[]
+    for i, model in enumerate(models):
+        print('model', model)
+        for v in model.latest_versions:
+            if v.current_stage in ["Staging","Production"]:
+                res.append(deploy_model(v.name, v.version))
+            else: remove_model(v.name, v.version)
+    return res
 
 @app.route("/")
 def index():
-    # data = requests.get('http://mlflow:5000/api/2.0/preview/mlflow/registered-models/list').json()
-    data2 = requests.get(f'{os.environ.get("MLFLOW_TRACKING_URI")}/api/2.0/preview/mlflow/registered-models/list', verify=False).json()
-    return render_template('index.html', data=data2)
+    models = client.search_registered_models()
+    print(models)
+    return models
+
+@app.route("/redeploy")
+def redeploy():
+    res = asyncio.run(main())
+    return res
+
+@app.route("/stacks")
+def stacks():
+    headers = {"X-API-Key": os.environ['PORTAINER_ACCESS_TOKEN']}
+    params={"Name": 'iris_xgb-v1'}
+    stack_1 = requests.get(f"{os.environ['PORTAINER_API_URI']}/stacks", headers=headers, params=params)
+    params={"Name": 'iris_xgb-v2'}
+    stack_2 = requests.get(f"{os.environ['PORTAINER_API_URI']}/stacks", headers=headers, params=params)
+    stacks = stack_1.json()
+    return stacks

@@ -1,3 +1,5 @@
 flask==2.2.2
+mlflow==1.29.0
 requests
 docker==6.0.0
+python-dotenv

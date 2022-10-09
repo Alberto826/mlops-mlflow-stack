@@ -1,0 +1,34 @@
+version: "3.8"
+
+services:
+
+  mldeploy:
+    build: ./mldeploy
+    networks:
+      - traefik-public
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}
+      - PORTAINER_ACCESS_TOKEN=${PORTAINER_ACCESS_TOKEN}
+      - PORTAINER_ENDPOINTID=${PORTAINER_ENDPOINTID}
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=traefik-public
+        - traefik.constraint-label=traefik-public
+        - traefik.http.routers.mldeploy-http.rule=Host(`${MLDEPLOY_DOMAIN?Variable MLDEPLOY_DOMAIN not set}`)
+        - traefik.http.routers.mldeploy-http.entrypoints=http
+        - traefik.http.routers.mldeploy-http.middlewares=https-redirect
+        - traefik.http.routers.mldeploy-https.rule=Host(`${MLDEPLOY_DOMAIN?Variable MLDEPLOY_DOMAIN not set}`)
+        - traefik.http.routers.mldeploy-https.entrypoints=https
+        - traefik.http.routers.mldeploy-https.tls.certresolver=le
+        - traefik.http.services.mldeploy.loadbalancer.server.port=5000
+
+networks:
+  traefik-public:
+    external: true
