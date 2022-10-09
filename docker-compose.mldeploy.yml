@@ -4,6 +4,7 @@ services:
 
   mldeploy:
     build: ./mldeploy
+    image: mldeploy
     networks:
       - traefik-public
     volumes:
