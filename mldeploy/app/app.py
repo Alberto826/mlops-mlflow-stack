@@ -19,7 +19,7 @@ def deploy_stack(name, version, stack_id=None, method='post'):
     version: "3.8"
     services:
         {full_name}:
-            image: mlflow_server
+            image: {os.environ['MLFLOW_IMAGE']}
             entrypoint: mlflow models serve -m "models:/{name}/{version}" -h 0.0.0.0
             networks:
                 - traefik-public
