@@ -33,5 +33,5 @@ def train_random_forest(ntrees):
         mlflow.log_artifacts('./','project')
 
 if __name__ == "__main__":
-    for ntrees in [200]:
+    for ntrees in [1,50,100,200]:
         train_random_forest(ntrees)
