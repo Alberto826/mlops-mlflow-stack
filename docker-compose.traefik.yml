@@ -24,6 +24,7 @@ services:
       - --providers.docker.swarmmode=true
       - --entrypoints.http.address=:80
       - --entrypoints.https.address=:443
+      - --entrypoints.https.http.middlewares=traefik-forward-auth
       - --certificatesresolvers.le.acme.email=${TRAEFIK_EMAIL:-test@email.com}
       - --certificatesresolvers.le.acme.storage=/certificates/acme.json
       - --certificatesresolvers.le.acme.tlschallenge=true
